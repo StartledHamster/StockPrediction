@@ -22,11 +22,14 @@ import pandas as pd
 import pandas_datareader as web
 import datetime as dt
 import tensorflow as tf
+import os
 
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, LSTM, InputLayer
 
+import yfinance as yf
+import re
 #------------------------------------------------------------------------------
 # Load Data
 ## TO DO:
@@ -35,18 +38,73 @@ from tensorflow.keras.layers import Dense, Dropout, LSTM, InputLayer
 # If not, save the data into a directory
 #------------------------------------------------------------------------------
 # DATA_SOURCE = "yahoo"
+
+
+train_data = 0
+test_data = 0
 COMPANY = 'CBA.AX'
 
-TRAIN_START = '2020-01-01'     # Start date to read
-TRAIN_END = '2023-08-01'       # End date to read
+train_start = '2020-01-01'     # Start date to read
+train_end = '2023-08-01'       # End date to read
+test_start = '2023-08-02'
+test_end = '2024-07-02'
+
+def load_process_dataset(company = COMPANY, start_date = '2020-01-01', end_date = '2024-07-02', split = '2023-08-01', save_path = './data/'):
+    global train_data
+    global test_data
+    
+
+    #Ensure save directory exists, if not make one
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+
+    #file format for full_data = savepath/company_startdate_enddate.csv
+    file_path = os.path.join(save_path, f"{company}_{start_date}_{end_date}.csv")
+
+    # If a file for the current parameter data exists, load from the local file
+    if os.path.exists(file_path):
+        print(f"Loading data from {file_path}")
+        full_data = pd.read_csv(file_path, index_col="Date", parse_dates=True)
+    else:
+        #if no local file exists, download from yf, and create local file for future reference
+        print(f"Downloading data for {company} from {start_date} to {end_date}")
+            
+        # Get the data for the stock AAPL
+        full_data = yf.download(company,start_date,end_date)
+
+        full_data.to_csv(file_path)
+        print(f"Data saved to {file_path}")
+
+
+    #This line is used to deal with NaNs; drops all missing values from dataset
+    full_data.dropna(inplace=True)
+
+    #Check split type
+    regexDate = r"^\d{4}-\d{2}-\d{2}$"
+    regexRatio = r"^0\.\d+$"
+    if (re.search(regexDate, split)):    #Check split type = Date YYYY-MM-DD
+        split_index = full_data.index.get_loc(pd.to_datetime(split))  #set index of split to the location of the split date.
+        train_data = full_data[:split_index] #values preceeding split are for training and those after are for testing
+        test_data = full_data[split_index:]
+    elif(re.search(regexRatio, split)):  #Check split type = Ratio 0.#
+        split_index = int(len(full_data) * split)  #set index of split to a ratio of the data set
+        train_data = full_data[:split_index]#values preceeding split are for training and those after are for testing
+        test_data = full_data[split_index:]
+
+
+
+
+    
+
+
+
+load_process_dataset()
 
 # data = web.DataReader(COMPANY, DATA_SOURCE, TRAIN_START, TRAIN_END) # Read data using yahoo
 
 
-import yfinance as yf
 
-# Get the data for the stock AAPL
-data = yf.download(COMPANY,TRAIN_START,TRAIN_END)
+
 
 #------------------------------------------------------------------------------
 # Prepare Data
@@ -62,7 +120,7 @@ PRICE_VALUE = "Close"
 scaler = MinMaxScaler(feature_range=(0, 1)) 
 # Note that, by default, feature_range=(0, 1). Thus, if you want a different 
 # feature_range (min,max) then you'll need to specify it here
-scaled_data = scaler.fit_transform(data[PRICE_VALUE].values.reshape(-1, 1)) 
+scaled_data = scaler.fit_transform(train_data[PRICE_VALUE].values.reshape(-1, 1)) 
 # Flatten and normalise the data
 # First, we reshape a 1D array(n) to 2D array(n,1)
 # We have to do that because sklearn.preprocessing.fit_transform()
@@ -184,12 +242,12 @@ model.fit(x_train, y_train, epochs=25, batch_size=32)
 # Test the model accuracy on existing data
 #------------------------------------------------------------------------------
 # Load the test data
-TEST_START = '2023-08-02'
-TEST_END = '2024-07-02'
+# TEST_START = '2023-08-02'
+# TEST_END = '2024-07-02'
 
 # test_data = web.DataReader(COMPANY, DATA_SOURCE, TEST_START, TEST_END)
 
-test_data = yf.download(COMPANY,TEST_START,TEST_END)
+##########################################test_data = yf.download(COMPANY,TEST_START,TEST_END)
 
 
 # The above bug is the reason for the following line of code
@@ -197,7 +255,7 @@ test_data = yf.download(COMPANY,TEST_START,TEST_END)
 
 actual_prices = test_data[PRICE_VALUE].values
 
-total_dataset = pd.concat((data[PRICE_VALUE], test_data[PRICE_VALUE]), axis=0)
+total_dataset = pd.concat((train_data[PRICE_VALUE], test_data[PRICE_VALUE]), axis=0)
 
 model_inputs = total_dataset[len(total_dataset) - len(test_data) - PREDICTION_DAYS:].values
 # We need to do the above because to predict the closing price of the fisrt
