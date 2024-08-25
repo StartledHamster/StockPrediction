@@ -43,16 +43,21 @@ import re
 train_data = 0
 test_data = 0
 COMPANY = 'CBA.AX'
+PRICE_VALUE = "Close"
+
+scaled_data = 0
+scaler = 0
 
 train_start = '2020-01-01'     # Start date to read
 train_end = '2023-08-01'       # End date to read
 test_start = '2023-08-02'
 test_end = '2024-07-02'
 
-def load_process_dataset(company = COMPANY, start_date = '2020-01-01', end_date = '2024-07-02', split = '2023-08-01', save_path = './data/'):
+def load_process_dataset(company = COMPANY, start_date = '2020-01-01', end_date = '2024-07-02', split = '2023-08-01', save_path = './data/', scale = True):
     global train_data
     global test_data
-    
+    global scaled_data
+    global scaler
 
     #Ensure save directory exists, if not make one
     if not os.path.exists(save_path):
@@ -79,6 +84,36 @@ def load_process_dataset(company = COMPANY, start_date = '2020-01-01', end_date 
     #This line is used to deal with NaNs; drops all missing values from dataset
     full_data.dropna(inplace=True)
 
+    #------------------------------------------------------------------------------
+    # Prepare Data
+    ## To do:
+    # 1) Check if data has been prepared before. 
+    # If so, load the saved data
+    # If not, save the data into a directory
+    # 2) Use a different price value eg. mid-point of Open & Close
+    # 3) Change the Prediction days
+    #------------------------------------------------------------------------------
+    if (scale):
+        scaler = MinMaxScaler(feature_range=(0, 1)) 
+    # Note that, by default, feature_range=(0, 1). Thus, if you want a different 
+    # feature_range (min,max) then you'll need to specify it here
+        scaled_data = scaler.fit_transform(full_data[PRICE_VALUE].values.reshape(-1, 1)) 
+    # Flatten and normalise the data
+    # First, we reshape a 1D array(n) to 2D array(n,1)
+    # We have to do that because sklearn.preprocessing.fit_transform()
+    # requires a 2D array
+    # Here n == len(scaled_data)
+    # Then, we scale the whole array to the range (0,1)
+    # The parameter -1 allows (np.)reshape to figure out the array size n automatically 
+    # values.reshape(-1, 1) 
+    # https://stackoverflow.com/questions/18691084/what-does-1-mean-in-numpy-reshape'
+    # When reshaping an array, the new shape must contain the same number of elements 
+    # as the old shape, meaning the products of the two shapes' dimensions must be equal. 
+    # When using a -1, the dimension corresponding to the -1 will be the product of 
+    # the dimensions of the original array divided by the product of the dimensions 
+    # given to reshape so as to maintain the same number of elements.
+
+
     #Check split type
     regexDate = r"^\d{4}-\d{2}-\d{2}$"
     regexRatio = r"^0\.\d+$"
@@ -90,6 +125,8 @@ def load_process_dataset(company = COMPANY, start_date = '2020-01-01', end_date 
         split_index = int(len(full_data) * split)  #set index of split to a ratio of the data set
         train_data = full_data[:split_index]#values preceeding split are for training and those after are for testing
         test_data = full_data[split_index:]
+
+
 
 
 
@@ -106,35 +143,6 @@ load_process_dataset()
 
 
 
-#------------------------------------------------------------------------------
-# Prepare Data
-## To do:
-# 1) Check if data has been prepared before. 
-# If so, load the saved data
-# If not, save the data into a directory
-# 2) Use a different price value eg. mid-point of Open & Close
-# 3) Change the Prediction days
-#------------------------------------------------------------------------------
-PRICE_VALUE = "Close"
-
-scaler = MinMaxScaler(feature_range=(0, 1)) 
-# Note that, by default, feature_range=(0, 1). Thus, if you want a different 
-# feature_range (min,max) then you'll need to specify it here
-scaled_data = scaler.fit_transform(train_data[PRICE_VALUE].values.reshape(-1, 1)) 
-# Flatten and normalise the data
-# First, we reshape a 1D array(n) to 2D array(n,1)
-# We have to do that because sklearn.preprocessing.fit_transform()
-# requires a 2D array
-# Here n == len(scaled_data)
-# Then, we scale the whole array to the range (0,1)
-# The parameter -1 allows (np.)reshape to figure out the array size n automatically 
-# values.reshape(-1, 1) 
-# https://stackoverflow.com/questions/18691084/what-does-1-mean-in-numpy-reshape'
-# When reshaping an array, the new shape must contain the same number of elements 
-# as the old shape, meaning the products of the two shapes' dimensions must be equal. 
-# When using a -1, the dimension corresponding to the -1 will be the product of 
-# the dimensions of the original array divided by the product of the dimensions 
-# given to reshape so as to maintain the same number of elements.
 
 # Number of days to look back to base the prediction
 PREDICTION_DAYS = 60 # Original
