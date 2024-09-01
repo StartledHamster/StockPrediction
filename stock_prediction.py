@@ -23,10 +23,14 @@ import pandas_datareader as web
 import datetime as dt
 import tensorflow as tf
 import os
+import plotly.graph_objects as go
+import mplfinance as mpf
 
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, LSTM, InputLayer
+
+
 
 import yfinance as yf
 import re
@@ -54,6 +58,17 @@ test_start = '2023-08-02'
 test_end = '2024-07-02'
 
 def load_process_dataset(company = COMPANY, start_date = '2020-01-01', end_date = '2024-07-02', split = '2023-08-01', save_path = './data/', scale = True):
+    """
+    loads data from csv / yf, processes and splits training and testing values
+
+    :param company: company the stock data is from
+    :param start_date: starting date of the data
+    :param end_date: ending date of the data
+    :param split: can be in format of date (YYYY-MM-DD) or ratio (0.#), splits training from testing data
+    :param save_path: directory of saved local csv files
+    :param scale: true or false, scales data between 0 and 1
+
+    """
     global train_data
     global test_data
     global scaled_data
@@ -131,7 +146,60 @@ def load_process_dataset(company = COMPANY, start_date = '2020-01-01', end_date 
 
 
 
+
+
+
+def plot_candlestick_chart(data, n=1):
+    """
+    Creates candlestick chart with mplfinance.
+
+    :param data: Gets stock data with Open, High, Low, Close price values.
+    :param n: Number of trading days each candlestick represents (n >= 1).
+
+    """
+    #ensure n days >= 1
+    days = n
+    if (days<1):
+        days = 1
+
+    #resamples the data using Pandas.DataFrame.Resamples, with the parameter n days. 
+    data = data.resample(f'{days}D').agg({
+        'Open': 'first',
+        'High': 'max',
+        'Low': 'min',
+        'Close': 'last',
+        'Volume': 'sum'
+    })
     
+    #Uses mplfinance to plot the data as a candlestick chart
+    mpf.plot(data, type='candle', style='charles', title=f'\n \n Candlestick Chart for {COMPANY},\n Trading Days/Candle = {days}',
+             ylabel=f'{COMPANY} Price', volume=False)
+    
+
+
+
+def plot_boxplot_chart(data, n=5, price_column='Close'):
+    """
+    Plots a boxplot chart of stock data for a moving window of n consecutive trading days.
+
+    :param data: Gets stock data, includes price columns.
+    :param n: Window size; days per window
+    :param price_column: The column name for the price data plotting (Open/Close/High/Low etc prices, default = Close).
+    """
+
+    # Creates list of moving window data; dataframe.iloc is used for index locating the data at i to i+n days through the length of the data
+    window_data = [data[price_column].iloc[i:i + n] for i in range(len(data) - n + 1)]
+
+    # Plot the boxplot
+    plt.figure(figsize=(10, 6))
+    plt.boxplot(window_data)
+    plt.title(f'Boxplot Chart for {COMPANY} Moving Window Size = {n} Days')
+    plt.xlabel('Window Number')
+    plt.ylabel(f'{price_column} Price')
+    plt.show()
+
+
+
 
 
 
@@ -139,8 +207,10 @@ load_process_dataset()
 
 # data = web.DataReader(COMPANY, DATA_SOURCE, TRAIN_START, TRAIN_END) # Read data using yahoo
 
+plot_candlestick_chart(train_data, 10)
 
 
+plot_boxplot_chart(train_data, n=5, price_column='Close')
 
 
 
