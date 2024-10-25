@@ -7,6 +7,8 @@ import tensorflow as tf
 import os
 import plotly.graph_objects as go
 import mplfinance as mpf
+import pmdarima as pm
+
 
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
@@ -195,7 +197,7 @@ load_process_dataset()
 
 
 
-def create_dl_model(layer_type='LSTM', num_layers=3, units=50, dropout=0.2, input_shape=(60, 1)):
+def create_dl_model(layer_type='LSTM', num_layers=3, units=50, dropout=0.2, input_shape=(60, 1), output_size=1):
     """
     Creates a deep learning model with provided parameters
     
@@ -204,6 +206,7 @@ def create_dl_model(layer_type='LSTM', num_layers=3, units=50, dropout=0.2, inpu
     :param units: Number of units/neurons per layer.
     :param dropout: Dropout rate to prevent overfitting.
     :param input_shape: Shape of the input data.
+    :param output_size: Number of steps ahead to predict.
     :return: Compiled deep learning model.
     """
     model = Sequential()
@@ -224,15 +227,16 @@ def create_dl_model(layer_type='LSTM', num_layers=3, units=50, dropout=0.2, inpu
         model.add(Layer(units=units, return_sequences=True))
         model.add(Dropout(dropout))
 
-    # Add the final layer
+    # Add the final recurrent layer without return_sequences
     model.add(Layer(units=units))
     model.add(Dropout(dropout))
 
-    # Add output layer
-    model.add(Dense(units=1))
+    # Add output layer with size based on the number of steps ahead
+    model.add(Dense(units=output_size))
 
     model.compile(optimizer='adam', loss='mean_squared_error')
     return model
+
 
 
 
@@ -275,22 +279,22 @@ input_shape = (x_train.shape[1], 1)  # As your input is (p, q, 1) where p = num_
 
 
 # Create LSTM model 
-model = create_dl_model(layer_type='LSTM', num_layers=3, units=50, dropout=0.2, input_shape=input_shape)
+#model = create_dl_model(layer_type='LSTM', num_layers=3, units=50, dropout=0.2, input_shape=input_shape)
 # Train model
-model.fit(x_train, y_train, epochs=25, batch_size=32)
-print(f"Finished training LSTM model\n")
+#model.fit(x_train, y_train, epochs=25, batch_size=32)
+#print(f"Finished training LSTM model\n")
 
 # Create GRU model 
-model = create_dl_model(layer_type='GRU', num_layers=3, units=50, dropout=0.3, input_shape=input_shape)
+#model = create_dl_model(layer_type='GRU', num_layers=3, units=50, dropout=0.3, input_shape=input_shape)
 # Train model
-model.fit(x_train, y_train, epochs=25, batch_size=32)
-print(f"Finished training GRU model\n")
+#model.fit(x_train, y_train, epochs=25, batch_size=32)
+#print(f"Finished training GRU model\n")
 
 # Create RNN model 
-model = create_dl_model(layer_type='RNN', num_layers=4, units=100, dropout=0.2, input_shape=input_shape)
+#model = create_dl_model(layer_type='RNN', num_layers=4, units=100, dropout=0.2, input_shape=input_shape)
 # Train model
-model.fit(x_train, y_train, epochs=25, batch_size=32)
-print(f"Finished training RNN model\n")
+#model.fit(x_train, y_train, epochs=25, batch_size=32)
+#print(f"Finished training RNN model\n")
 
 
 
@@ -367,3 +371,50 @@ def create_multistep_multivariate_sequences(data, window_size, steps_ahead):
         y.append(data[target_column].iloc[i + window_size:i + window_size + steps_ahead].values)
     
     return np.array(X), np.array(y)
+
+
+
+def ensemble_modeling():
+    # Train ARIMA model
+    arima_model = pm.auto_arima(train_data['Close'], 
+                                seasonal=False,  # True = SARIMA
+                                stepwise=True, 
+                                suppress_warnings=True)
+    # Fit ARIMA model on training data
+    arima_model.fit(train_data['Close'])
+    # Get ARIMA predictions
+    arima_predictions = arima_model.predict(n_periods=len(test_data))
+
+
+
+    # Train LSTM model  
+    window_size = 60  # past days to look at
+    steps_ahead = 5  # predict 5 days ahead
+    
+    # Scale data for LSTM
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaled_train = scaler.fit_transform(train_data['Close'].values.reshape(-1, 1))
+    scaled_test = scaler.transform(test_data['Close'].values.reshape(-1, 1))
+    # Prepare LSTM model data (input-output sequences) with multistep function
+    X_train, y_train = create_multistep_sequences(scaled_train, window_size, steps_ahead)
+    # Create LSTM model
+    input_shape = (window_size, 1)  # (time_steps, features)
+    lstm_model = create_dl_model(input_shape=input_shape, output_size=steps_ahead)
+    # Train LSTM model
+    lstm_model.fit(X_train, y_train, epochs=20, batch_size=32)
+
+    # LSTM predictions
+    X_test, _ = create_multistep_sequences(scaled_test, window_size, steps_ahead)
+    lstm_predictions = lstm_model.predict(X_test)
+    lstm_predictions = scaler.inverse_transform(lstm_predictions)
+
+    # Ensemble Prediction = average
+    ensemble_predictions = (arima_predictions[:len(lstm_predictions)] + lstm_predictions[:, 0]) / 2
+
+    print("ARIMA Predictions: ", arima_predictions[:len(lstm_predictions)])
+    print("LSTM Predictions: ", lstm_predictions[:, 0])
+    print("Ensemble Predictions: ", ensemble_predictions)
+
+
+ensemble_modeling()
+
